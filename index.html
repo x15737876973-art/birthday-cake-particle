@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#04060f" />
+<title>3D 粒子蛋糕 · 郝文君宝宝生日快乐</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;margin:0;background:#04060f;overflow:hidden;}
+  body{
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+    color:#e9f2ff;user-select:none;
+  }
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0;cursor:grab;}
+  #gl.grabbing{cursor:grabbing;}
+  #gl.pointing{cursor:pointer;}
+
+  .vignette{
+    position:fixed;inset:0;z-index:2;pointer-events:none;
+    background:radial-gradient(ellipse 75% 70% at 50% 46%, rgba(0,0,0,0) 40%, rgba(0,2,10,.55) 78%, rgba(0,1,6,.92) 100%);
+  }
+
+  /* ---------- 标题 ---------- */
+  .brand{
+    position:fixed;left:50%;top:clamp(18px,4vh,44px);transform:translateX(-50%);
+    z-index:5;text-align:center;pointer-events:none;white-space:nowrap;
+    opacity:0;transition:opacity 1.6s ease;
+  }
+  .brand.show{opacity:1;}
+  .brand .k{
+    font:600 clamp(9px,1.5vw,12px)/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    letter-spacing:.55em;color:#5ee7ff;text-shadow:0 0 14px rgba(94,231,255,.8);text-indent:.55em;
+  }
+  .brand .t{
+    margin-top:10px;max-width:100vw;
+    font-size:clamp(16px,3.4vw,30px);font-weight:800;letter-spacing:.14em;
+    background:linear-gradient(92deg,#7df9ff,#a78bfa 35%,#ff7ad9 65%,#ffd27a);
+    background-size:220% 100%;
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 0 18px rgba(167,139,250,.55));
+    animation:shine 7s linear infinite;
+  }
+  @keyframes shine{to{background-position:220% 0;}}
+
+  /* ---------- 底部提示 ---------- */
+  .hud{
+    position:fixed;left:50%;bottom:max(20px, env(safe-area-inset-bottom));
+    transform:translateX(-50%);z-index:5;
+    display:flex;flex-direction:column;align-items:center;gap:14px;
+    width:min(94vw,720px);pointer-events:none;
+    opacity:0;transition:opacity 1s ease;
+  }
+  .hud.show{opacity:1;}
+  .hud.show .row{pointer-events:auto;}
+  .tip{
+    font-size:clamp(12px,2.4vw,15px);letter-spacing:.1em;color:#cfe6ff;
+    padding:.55em 1.2em;border-radius:999px;
+    background:rgba(8,16,34,.55);border:1px solid rgba(94,231,255,.25);
+    backdrop-filter:blur(8px);
+    box-shadow:0 0 24px rgba(46,160,255,.18), inset 0 0 18px rgba(94,231,255,.06);
+    animation:breathe 2.8s ease-in-out infinite;
+  }
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.025)}}
+  .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+  .btn{
+    font:inherit;font-size:clamp(12px,2.3vw,13.5px);letter-spacing:.1em;cursor:pointer;
+    padding:.62em 1.25em;border-radius:999px;color:#dff3ff;
+    background:rgba(12,24,48,.55);border:1px solid rgba(94,231,255,.3);
+    backdrop-filter:blur(8px);
+    transition:transform .18s ease, background .18s, box-shadow .18s, border-color .18s;
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,"PingFang SC","Microsoft YaHei",monospace;
+  }
+  .btn:hover{transform:translateY(-2px);background:rgba(30,70,130,.55);border-color:rgba(125,249,255,.75);box-shadow:0 0 22px rgba(94,231,255,.35);}
+  .btn:active{transform:scale(.96);}
+  .btn.pri{color:#04121e;font-weight:700;border:0;background:linear-gradient(135deg,#7df9ff,#8ab4ff 50%,#c58bff);box-shadow:0 0 26px rgba(125,249,255,.45);}
+
+  /* ---------- 右上工具 ---------- */
+  .tools{position:fixed;right:max(12px, env(safe-area-inset-right));top:max(12px, env(safe-area-inset-top));z-index:6;display:flex;gap:8px;opacity:0;transition:opacity 1s;}
+  .tools.show{opacity:1;}
+  .tool{
+    width:38px;height:38px;border-radius:10px;display:grid;place-items:center;cursor:pointer;
+    font-size:15px;color:#cfe9ff;background:rgba(10,20,40,.55);border:1px solid rgba(94,231,255,.25);
+    backdrop-filter:blur(8px);transition:background .18s, border-color .18s;
+  }
+  .tool:hover{background:rgba(30,70,130,.6);border-color:rgba(125,249,255,.7);}
+
+  .fatal{position:fixed;inset:0;z-index:20;display:none;place-items:center;text-align:center;padding:8vw;background:#04060f;line-height:2;font-size:15px;}
+  .fatal.show{display:grid;}
+
+  @media (max-width:560px){
+    .brand{top:max(56px, calc(env(safe-area-inset-top) + 48px));}
+    .brand .t{font-size:clamp(15px,5vw,20px);}
+    .hud{bottom:max(14px, env(safe-area-inset-bottom));}
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="vignette"></div>
+
+<div class="brand" id="brand">
+  <div class="k">HAPPY BIRTHDAY</div>
+  <div class="t">祝 郝文君宝宝 生日快乐</div>
+</div>
+
+<div class="tools" id="tools">
+  <button class="tool" id="btnSound" title="声音">🔊</button>
+  <button class="tool" id="btnFull" title="全屏">⛶</button>
+</div>
+
+<div class="hud" id="hud">
+  <div class="tip" id="tip">拖拽旋转 · 对着屏幕吹气 / 点击蜡烛 吹灭它</div>
+  <div class="row">
+    <button class="btn pri" id="btnBlow">🌬️ 吹蜡烛</button>
+    <button class="btn" id="btnForm">🎂 粒子蛋糕</button>
+    <button class="btn" id="btnText">✨ 粒子祝福</button>
+    <button class="btn" id="btnGift">🎁 许愿</button>
+  </div>
+</div>
+
+<div class="fatal" id="fatal">
+  <div>这个浏览器不支持 WebGL 2 😢<br />请用最新版 Chrome / Edge / Safari 打开。</div>
+</div>
+
+<script>
+/* =====================================================================
+   🎂 3D 粒子蛋糕 · 程序员专属浪漫
+   - 蛋糕 / 蜡烛 / 火焰 / 奶油全部由粒子构成
+   - 吹蜡 => 粒子炸散再重排成祝福文字
+   - 拖拽旋转 / 麦克风吹气 / 合成音效
+   ===================================================================== */
+(function () {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const canvas = $('#gl');
+  const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, powerPreference: 'high-performance' });
+  if (!gl) { $('#fatal').classList.add('show'); return; }
+
+  let W = 1, H = 1, DPR = 1;
+  const RATIO = Math.min(window.devicePixelRatio || 1, 2);
+
+  /* ---------------- 着色器 ---------------- */
+  const VS = `#version 300 es
+in vec3 aPos;
+in vec3 aColor;
+in float aSize;
+in float aAlpha;
+uniform mat4 uVP;
+uniform vec2 uRes;
+out vec3 vColor;
+out float vAlpha;
+void main(){
+  vec4 clip = uVP * vec4(aPos, 1.0);
+  gl_Position = clip;
+  float depth = max(clip.w, 0.001);
+  gl_PointSize = clamp(aSize * (uRes.y * 1.15) / depth, 1.0, 64.0);
+  vColor = aColor;
+  vAlpha = aAlpha;
+}`;
+
+  const FS = `#version 300 es
+precision highp float;
+in vec3 vColor;
+in float vAlpha;
+out vec4 o;
+void main(){
+  vec2 d = gl_PointCoord - 0.5;
+  float r2 = dot(d, d) * 4.0;
+  if (r2 > 1.0) discard;
+  float core = exp(-r2 * 3.2);
+  float glow = 1.0 - r2;
+  glow *= glow;
+  glow *= glow;
+  float a = core * 0.42 + glow * 0.75;
+  o = vec4(vColor * a * vAlpha, a * vAlpha);
+}`;
+
+  function sh(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s));
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(prog));
+  const A = {
+    pos: gl.getAttribLocation(prog, 'aPos'),
+    col: gl.getAttribLocation(prog, 'aColor'),
+    size: gl.getAttribLocation(prog, 'aSize'),
+    alpha: gl.getAttribLocation(prog, 'aAlpha')
+  };
+  const U = {
+    vp: gl.getUniformLocation(prog, 'uVP'),
+    res: gl.getUniformLocation(prog, 'uRes')
+  };
+
+  /* ---------------- 数学 ---------------- */
+  function perspective(fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+    return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
+  }
+  function lookAt(eye, target, up) {
+    const z = norm([eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]]);
+    const x = norm(cross(up, z));
+    const y = cross(z, x);
+    return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, eye), -dot(y, eye), -dot(z, eye), 1]);
+  }
+  function mul4(a, b) {
+    const o = new Float32Array(16);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k];
+      o[i * 4 + j] = s;
+    }
+    return o;
+  }
+  function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+  function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  function norm(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
+  const rnd = (a, b) => a + random() * (b - a);
+
+  /* ---------------- 颜色（sRGB 输入，写入时转线性近似） ---------------- */
+  const toLin = (c) => [Math.pow(c[0] / 255, 2.2), Math.pow(c[1] / 255, 2.2), Math.pow(c[2] / 255, 2.2)];
+  const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const jitter = (c, amt) => [c[0] * rnd(1 - amt, 1 + amt), c[1] * rnd(1 - amt, 1 + amt), c[2] * rnd(1 - amt, 1 + amt)];
+
+  const C = {
+    cream: toLin([255, 238, 232]),
+    creamDark: toLin([244, 205, 214]),
+    pink: toLin([255, 122, 178]),
+    purple: toLin([170, 140, 255]),
+    gold: toLin([255, 205, 120]),
+    choco: toLin([150, 92, 58]),
+    sponge: toLin([236, 196, 150]),
+    berry: toLin([255, 78, 104]),
+    leaf: toLin([96, 232, 150]),
+    candleA: toLin([255, 244, 250]),
+    candleB: toLin([255, 96, 152]),
+    flameOut: toLin([255, 120, 40]),
+    flameMid: toLin([255, 200, 80]),
+    flameIn: toLin([255, 250, 220]),
+    spark: toLin([255, 255, 255]),
+    cyan: toLin([125, 249, 255]),
+    violet: toLin([170, 139, 250]),
+    magenta: toLin([255, 122, 217]),
+    amber: toLin([255, 210, 122])
+  };
+
+  /* =====================================================================
+     粒子数据
+     ===================================================================== */
+  let MAXP = 90000;
+  let parts = [];          // {tx,ty,tz, color, size, alpha, ...}
+  const NAMES = ['text', 'burst', 'heart', 'ring', 'tumble', 'rain', 'orbit'];
+
+  function newPart() {
+    return {
+      tx: 0, ty: 0, tz: 0,
+      // 运动状态
+      px: 0, py: 0, pz: 0,
+      vx: 0, vy: 0, vz: 0,
+      // 爆炸冲量偏移
+      ex: 0, ey: 0, ez: 0,
+      evx: 0, evy: 0, evz: 0,
+      // 蛋糕本地旋转（旋转半径）
+      rx: 0, rz: 0, ang: 0, radius: 0,
+      color: [0.1, 0.1, 0.1], baseColor: [0.1, 0.1, 0.1],
+      size: 0.01, baseSize: 0.01, alpha: 1,
+      form: 0, delay: 0, sp: 1,
+      type: 0,                 // 0 蛋糕 1 蜡烛 2 火焰 3 特殊
+      candle: -1, flameRank: 0,
+      seed: random() * 1000,
+      phase: random() * Math.PI * 2,
+      wob: random() * Math.PI * 2,
+      hold: 0, wait: 0, delay: 0
+    };
+  }
+
+  function ensureCap(n) {
+    if (n <= MAXP && parts.length >= n) return;
+    const want = Math.max(n, parts.length);
+    if (want > MAXP) MAXP = want + 20000;
+    const buf = new Float32Array(MAXP * 8);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, buf, gl.DYNAMIC_DRAW);
+    gpu = buf;
+  }
+  let gpu = null;
+  const vao = gl.createVertexArray();
+  const vbo = gl.createBuffer();
+  (function initBuf() {
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, MAXP * 8 * 4, gl.DYNAMIC_DRAW);
+    gpu = new Float32Array(MAXP * 8);
+    const stride = 8 * 4;
+    gl.enableVertexAttribArray(A.pos); gl.vertexAttribPointer(A.pos, 3, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(A.col); gl.vertexAttribPointer(A.col, 3, gl.FLOAT, false, stride, 12);
+    gl.enableVertexAttribArray(A.size); gl.vertexAttribPointer(A.size, 1, gl.FLOAT, false, stride, 24);
+    gl.enableVertexAttribArray(A.alpha); gl.vertexAttribPointer(A.alpha, 1, gl.FLOAT, false, stride, 28);
+    gl.bindVertexArray(null);
+  })();
+
+  /* =====================================================================
+     形态构建
+     ===================================================================== */
+  const TIERS = [
+    { y: -0.55, r: 1.00, h: 0.42, color: C.pink },
+    { y: -0.13, r: 0.78, h: 0.36, color: C.purple },
+    { y: 0.23, r: 0.56, h: 0.30, color: C.gold }
+  ];
+  const CANDLES = [
+    { x: 0.0, z: 0.0, h: 0.46, r: 0.030 },
+    { x: -0.26, z: 0.10, h: 0.34, r: 0.026 },
+    { x: 0.26, z: -0.10, h: 0.34, r: 0.026 }
+  ];
+  const CANDLE_BASE = TIERS[2].y + TIERS[2].h + 0.035;
+
+  // 蛋糕表面（3D 薄壳 + 轻微体积）
+  function buildCake(nShell, nGlow) {
+    const out = [];
+    const shell = Math.floor(nShell * 0.86);
+    const glow = nShell - shell;
+    for (let i = 0; i < shell + glow; i++) {
+      const isGlow = i >= shell;
+      const tier = TIERS[(random() * 3) | 0];
+      const kind = random();
+      let x = 0, y = 0, z = 0;
+      let col = tier.color;
+      let size = 0.013;
+      const yTop = tier.y + tier.h / 2;
+      const yBot = tier.y - tier.h / 2;
+      if (kind < 0.52) {
+        // 侧面
+        const a = random() * Math.PI * 2;
+        const depth = isGlow ? rnd(0.0, 0.35) : rnd(0, 0.06);
+        const r = tier.r * (1 - depth);
+        x = Math.cos(a) * r; z = Math.sin(a) * r;
+        y = rnd(yBot, yTop);
+        // 糖衣滴落边缘
+        const drip = Math.sin(a * 9 + tier.y * 11) * 0.5 + 0.5;
+        const dripEdge = yTop - tier.h * (0.10 + drip * 0.22);
+        if (y > dripEdge) { col = jitter(C.cream, 0.04); }
+        else {
+          col = jitter(mix3(C.cream, tier.color, 0.18 * Math.sin(a * 18) * 0.5 + 0.12), 0.08);
+        }
+      } else if (kind < 0.80) {
+        // 顶面
+        const a = random() * Math.PI * 2;
+        const rr = Math.sqrt(random()) * tier.r;
+        x = Math.cos(a) * rr; z = Math.sin(a) * rr;
+        y = yTop + rnd(0, 0.012);
+        col = jitter(C.cream, 0.05);
+        // 奶油花边
+        const nb = 16;
+        const ang = (a / (Math.PI * 2)) * nb;
+        const f = Math.abs(((ang % 1) + 1) % 1 - 0.5);
+        if (rr > tier.r * 0.80 && f < 0.30) { y += 0.018 * Math.cos(f / 0.3 * Math.PI * 0.5); col = jitter(C.cream, 0.03); size = 0.016; }
+        // 小圆点糖珠
+        if (rr > tier.r * 0.45 && rr < tier.r * 0.7 && random() < 0.12) {
+          col = jitter(C.pink, 0.1); size = 0.014;
+        }
+      } else {
+        // 蛋糕胚夹层
+        const a = random() * Math.PI * 2;
+        const r = tier.r * rnd(0.55, 0.98);
+        x = Math.cos(a) * r; z = Math.sin(a) * r;
+        y = yBot + rnd(-0.006, 0.012);
+        col = jitter(C.sponge, 0.1);
+        size = 0.011;
+      }
+      if (isGlow) { size *= 0.75; col = jitter(tier.color, 0.1); }
+      out.push({ x, y, z, col, size, type: 0, alpha: isGlow ? 0.5 : 1 });
+    }
+    return out;
+  }
+
+  // 托盘（发光圆环 + 薄盘）
+  function buildPlate(n) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const a = random() * Math.PI * 2;
+      const r = i % 3 === 0 ? rnd(1.16, 1.22) : Math.sqrt(random()) * 1.16;
+      out.push({
+        x: Math.cos(a) * r, y: TIERS[0].y - TIERS[0].h / 2 - 0.035 + rnd(-0.006, 0.006), z: Math.sin(a) * r,
+        col: mix3(C.cyan, C.violet, rnd(0, 1)), size: i % 3 === 0 ? 0.015 : 0.009,
+        type: 3, alpha: i % 3 === 0 ? 1 : 0.55
+      });
+    }
+    return out;
+  }
+
+  // 蜡烛柱身
+  function buildCandles(n) {
+    const out = [];
+    CANDLES.forEach((c, ci) => {
+      const cnt = Math.floor(n / 3);
+      for (let i = 0; i < cnt; i++) {
+        const a = random() * Math.PI * 2;
+        const hollow = random() < 0.25;
+        const r = c.r * (hollow ? rnd(0.55, 0.9) : rnd(0.92, 1.02));
+        const h = random();
+        const y = CANDLE_BASE + h * c.h;
+        const stripe = Math.sin(h * Math.PI * 2 * 6.5 + ci * 1.3) > 0.35;
+        out.push({
+          x: c.x + Math.cos(a) * r, y, z: c.z + Math.sin(a) * r,
+          col: jitter(stripe ? C.candleB : C.candleA, 0.06),
+          size: 0.0105, type: 1, candle: ci, alpha: 1
+        });
+      }
+      // 烛芯顶部一颗亮星
+      out.push({ x: c.x, y: CANDLE_BASE + c.h + 0.012, z: c.z, col: C.flameIn, size: 0.02, type: 1, candle: ci, alpha: 1 });
+    });
+    return out;
+  }
+
+  // 火焰粒子（每个蜡烛固定数量，按 rank 从下到上）
+  function buildFlames(perCandle) {
+    const out = [];
+    CANDLES.forEach((c, ci) => {
+      for (let i = 0; i < perCandle; i++) {
+        const k = i / perCandle;
+        out.push({
+          x: c.x, y: CANDLE_BASE + c.h + 0.02, z: c.z,
+          col: [1, 1, 1], size: 0.02, type: 2, candle: ci, flameRank: k, alpha: 1
+        });
+      }
+    });
+    return out;
+  }
+
+  /* ---------------- 目标载体 ---------------- */
+  const FORMS = { cake: [], text: [], heart: [], tumble: [], rain: [], burst: [], orbit: [] };
+  let textPts = [];
+  let heartPts = [];
+  let namePts = [];
+
+  function sampleCanvasText(str, fontSize, weight, spacing) {
+    const cv = document.createElement('canvas');
+    const ctx = cv.getContext('2d');
+    const font = `${weight || 900} ${fontSize}px "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif`;
+    ctx.font = font;
+    const w = Math.ceil(ctx.measureText(str).width) + 24;
+    cv.width = w; cv.height = Math.ceil(fontSize * 1.55);
+    const c2 = cv.getContext('2d');
+    c2.font = font;
+    c2.fillStyle = '#fff';
+    c2.textBaseline = 'middle';
+    c2.textAlign = 'center';
+    c2.fillText(str, cv.width / 2, cv.height / 2);
+    const data = c2.getImageData(0, 0, cv.width, cv.height).data;
+    const pts = [];
+    for (let y = 0; y < cv.height; y += 2) {
+      for (let x = 0; x < cv.width; x += 2) {
+        if (data[(y * cv.width + x) * 4 + 3] > 128) pts.push([x - cv.width / 2, y - cv.height / 2]);
+      }
+    }
+    void spacing;
+    return { pts, w: cv.width, h: cv.height };
+  }
+
+  // 文字目标：多行，返回统一缩放到世界坐标的点
+  // 文字形态：widthW 为整块文字的世界宽度
+  function buildTextTargets(lines, total, widthW) {
+    const out = [];
+    const samples = lines.map((l) => sampleCanvasText(l.text, 120, l.weight || 900));
+    const maxW = Math.max(...samples.map((m) => m.w * (m.pts.length ? 1 : 1)));
+    const lineH = Math.max(...samples.map((m) => m.h));
+    const gap = lineH * 0.10;
+    const totalW = Math.max(...samples.map((m) => m.w));
+    const scale = widthW / totalW;
+    const totalH = (samples.length * lineH + (samples.length - 1) * gap);
+    let yOff = -totalH / 2 + lineH / 2;
+    samples.forEach((m, li) => {
+      const line = lines[li];
+      const share = line.weight === 900 ? 0.24 : 0.18;
+      const n = Math.floor(total * share);
+      for (let i = 0; i < n; i++) {
+        if (!m.pts.length) continue;
+        const pt = m.pts[(random() * m.pts.length) | 0];
+        const jx = (random() - 0.5) * 2.6, jy = (random() - 0.5) * 2.6;
+        out.push({
+          x: (pt[0] + jx) * scale,
+          y: -(pt[1] + jy + (m.h - lineH) / 2) * scale - (li - (lines.length - 1) / 2) * (lineH + gap) * scale,
+          z: rnd(-0.04, 0.04),
+          col: line.col, size: line.size || 0.02, type: 3, alpha: 1, line: li
+        });
+      }
+      yOff += lineH + gap;
+    });
+    void maxW; void yOff;
+    return out;
+  }
+
+  function buildHeartTargets(total) {
+    const out = [];
+    for (let i = 0; i < total; i++) {
+      const t = random() * Math.PI * 2;
+      const rr = Math.sqrt(random());
+      const x = 16 * Math.pow(Math.sin(t), 3);
+      const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      const edge = rr > 0.86;
+      const s = 0.078 * (edge ? 1 : rr * 0.96);
+      const ccol = edge ? C.magenta : mix3(toLin([255, 50, 110]), C.pink, Math.sqrt(rr));
+      out.push({
+        x: x * s, y: y * s + 0.06, z: (random() - 0.5) * 0.14 * (1 - rr),
+        col: ccol, size: edge ? 0.016 : 0.0125, type: 3, alpha: 1
+      });
+    }
+    return out;
+  }
+
+  // 让文字轮廓更清晰：把远离字形内部的点向中心收缩一点，减少“糊成块”
+  function insetText(list, k) {
+    for (const t of list) { t.x *= k; t.y *= k; }
+    return list;
+  }
+
+  function buildTumble(total) {
+    const out = [];
+    const pal = [C.cyan, C.violet, C.magenta, C.amber, C.pink, C.leaf, C.cream];
+    for (let i = 0; i < total; i++) {
+      const u = random() * Math.PI * 2, v = Math.acos(rnd(-1, 1));
+      const r = Math.pow(random(), 0.45) * 3.4;
+      out.push({
+        x: Math.sin(v) * Math.cos(u) * r, y: Math.cos(v) * r * 0.72 + 0.1, z: Math.sin(v) * Math.sin(u) * r,
+        col: pal[(random() * pal.length) | 0], size: 0.013, type: 3, alpha: 1
+      });
+    }
+    return out;
+  }
+
+  function buildOrbit(total) {
+    const out = [];
+    for (let i = 0; i < total; i++) {
+      const ring = i % 3;
+      const a = random() * Math.PI * 2;
+      const r = 1.25 + ring * 0.32 + rnd(-0.04, 0.04);
+      out.push({
+        x: Math.cos(a) * r, y: rnd(-0.03, 0.03) + (ring - 1) * 0.35, z: Math.sin(a) * r,
+        col: mix3(C.cyan, C.violet, random()), size: 0.012, type: 3, alpha: 0.9
+      });
+    }
+    return out;
+  }
+
+  function buildRain(total) {
+    const out = [];
+    const pal = [C.cyan, C.violet, C.magenta, C.amber, C.pink, C.cream, C.leaf];
+    for (let i = 0; i < total; i++) {
+      out.push({
+        x: rnd(-4.2, 4.2), y: rnd(2.2, 4.6), z: rnd(-2.6, 2.0),
+        col: pal[(random() * pal.length) | 0], size: 0.012, type: 3, alpha: 1
+      });
+    }
+    return out;
+  }
+
+  /* =====================================================================
+     切换形态
+     ===================================================================== */
+  const S = {
+    form: 'cake',
+    morph: 0,
+    t: 0,
+    spin: 0,
+    spinVel: 0.18,
+    lit: 3,
+    blown: false,
+    candlesOut: [false, false, false],
+    flameHeat: 1,
+    flash: 0,
+    camDist: 4.6,
+    camDistT: 4.6,
+    camY: 1.05,
+    particles: [],
+    nameTargets: [],
+    heartTargets: [],
+    giftStep: 0
+  };
+
+  function setFormTargets(name, wait) {
+    const src = (FORMS[name] || FORMS.cake).filter((t) => Number.isFinite(t.x) && Number.isFinite(t.y) && Number.isFinite(t.z));
+    if (!src.length) return;
+    const N = Math.max(parts.length, src.length);
+    ensureCap(N);
+    while (parts.length < N) parts.push(newPart());
+    // 多余的粒子（蛋糕以外的形态粒子更多）从远处飞来
+    for (let i = 0; i < N; i++) {
+      const p = parts[i];
+      const tgt = src[i % src.length];
+      p.tx = tgt.x; p.ty = tgt.y; p.tz = tgt.z;
+      p.baseColor = tgt.col;
+      p.baseSize = tgt.size;
+      p.type = tgt.type;
+      p.candle = tgt.candle == null ? -1 : tgt.candle;
+      p.flameRank = tgt.flameRank || 0;
+      p.line = tgt.line == null ? -1 : tgt.line;
+      p.radius = Math.hypot(tgt.x, tgt.z);
+      p.ang = Math.atan2(tgt.z, tgt.x);
+      p.delay = random() * 0.42;
+      p.sp = rnd(0.85, 1.35);
+      p.wait = wait == null ? 0 : wait + random() * 0.35;
+    }
+    // 超出目标数量的粒子，飞散到远处
+    for (let i = N; i < parts.length; i++) {
+      const p = parts[i];
+      p.type = 3;
+      p.tx = rnd(-6, 6); p.ty = rnd(-3, 5); p.tz = rnd(-6, 4);
+      p.baseColor = C.violet; p.baseSize = 0.008;
+    }
+    for (const p of parts) { p.ex = 0; p.ey = 0; p.ez = 0; p.evx = 0; p.evy = 0; p.evz = 0; p.hold = 0; }
+    S.form = name;
+    S.morph = 1;
+    S.wait = wait == null ? 0 : wait;
+    // 文字形态放大粒子
+    if (name === 'text' || name === 'heart') {
+      for (const p of parts) { if (p.type === 3) p.baseSize = name === 'heart' ? 0.019 : 0.02; }
+    }
+  }
+
+  function blowCandle(i) {
+    if (S.candlesOut[i] || S.form !== 'cake') return;
+    S.candlesOut[i] = true;
+    const out = S.candlesOut.filter(Boolean).length;
+    S.lit = 3 - out;
+    const c = CANDLES[i];
+    // 熄灭时从火焰位置炸出一圈火花
+    const base = CANDLE_BASE + c.h;
+    for (const p of parts) {
+      if (p.type === 1 && p.candle === i) {
+        p.hold = 1.2; // 蜡身短暂散发余温光
+      }
+      if (p.type === 2 && p.candle === i) {
+        const a = random() * Math.PI * 2;
+        const sp = rnd(0.5, 1.6);
+        p.evx = Math.cos(a) * sp; p.evy = rnd(0.5, 2.2); p.evz = Math.sin(a) * sp;
+        p.hold = rnd(0.6, 1.3);
+      }
+    }
+    Sound.blow(0.35);
+    S.smoke = S.smoke || [];
+    for (let k = 0; k < 40; k++) {
+      S.smoke.push({
+        x: c.x + rnd(-0.03, 0.03), y: base + rnd(0, 0.05), z: c.z + rnd(-0.03, 0.03),
+        vx: rnd(-0.1, 0.1), vy: rnd(0.3, 0.6), vz: rnd(-0.1, 0.1), life: 0, max: rnd(1.2, 2.2)
+      });
+    }
+    updateTip();
+    if (S.lit === 0) setTimeout(celebrate, 700);
+  }
+
+  function blowAll() {
+    if (S.form !== 'cake') { setFormTargets('cake'); return; }
+    if (S.lit === 0) { resetCandles(); return; }
+    [0, 1, 2].forEach((i, k) => {
+      if (!S.candlesOut[i]) setTimeout(() => blowCandle(i), k * 260);
+    });
+  }
+
+  function resetCandles() {
+    S.candlesOut = [false, false, false];
+    S.lit = 3;
+    S.blown = false;
+    updateTip();
+    Sound.spark();
+  }
+
+  function celebrate() {
+    S.blown = true;
+    Sound.boom();
+    Sound.song();
+    flashPulse(0.7);
+    scatter(1.6);
+    cam.distT = 5.2;
+    // 炸散后重组成祝福文字
+    setTimeout(() => { setFormTargets('text', 0.05); flashPulse(0.3); Sound.spark(); }, 1100);
+    setTimeout(() => updateTip(), 1000);
+  }
+
+  // 心形 + 名字祝福（许愿按钮）
+  function giftForm() {
+    S.giftStep = (S.giftStep + 1) % 3;
+    const step = S.giftStep;
+    if (step === 0) {
+      // 心形 + 名字文字一起：粒子按比例分给两者
+      combineHeartText();
+      cam.distT = 4.6;
+    } else if (step === 1) {
+      setFormTargets('heart'); cam.distT = 4.4;
+    } else {
+      setFormTargets('orbit'); cam.distT = 6.0;
+    }
+    flashPulse(0.3);
+    Sound.spark();
+    updateTip();
+  }
+
+  function combineHeartText() {
+    const src = [];
+    const heart = FORMS.heart;
+    const wish = FORMS.heartWish || [];
+    const total = parts.length;
+    const nHeart = Math.floor(total * 0.60);
+    for (let i = 0; i < nHeart; i++) {
+      const h = heart[i % heart.length];
+      src.push({ x: h.x * 1.05, y: h.y * 1.05 - 0.30, z: h.z, col: h.col, size: h.size * 0.95, type: 3 });
+    }
+    for (let i = nHeart; i < total; i++) {
+      const w = wish[(i - nHeart) % wish.length];
+      src.push({ x: w.x * 0.58, y: w.y * 0.58 + 0.99, z: w.z, col: w.col, size: w.size, type: 3 });
+    }
+    applyTargets(src, 'heartText');
+    clearImpulses();
+  }
+
+  // 通用：把一组目标应用到所有粒子
+  function applyTargets(src, formName) {
+    src = src.filter((t) => Number.isFinite(t.x) && Number.isFinite(t.y) && Number.isFinite(t.z));
+    if (!src.length) return;
+    ensureCap(src.length);
+    while (parts.length < src.length) parts.push(newPart());
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      const t = src[i % src.length];
+      p.tx = t.x; p.ty = t.y; p.tz = t.z;
+      p.baseColor = t.col; p.baseSize = t.size;
+      p.type = t.type; p.candle = -1; p.flameRank = 0; p.line = t.line == null ? -1 : t.line;
+      p.radius = Math.hypot(t.x, t.z);
+      p.ang = Math.atan2(t.z, t.x);
+      p.sp = rnd(0.85, 1.35);
+      p.wait = 0; p.hold = 0;
+    }
+    clearImpulses();
+    S.form = formName;
+    S.morph = 1;
+    S.wait = 0;
+  }
+
+  function clearImpulses() {
+    for (const p of parts) { p.ex = 0; p.ey = 0; p.ez = 0; p.evx = 0; p.evy = 0; p.evz = 0; p.hold = 0; p.wait = 0; }
+  }
+
+  function flashPulse(v) { S.flash = Math.max(S.flash, v); }
+
+  function updateTip() {
+    const tip = $('#tip');
+    if (S.form === 'text') { tip.textContent = '粒子祝福 · 拖动可旋转'; return; }
+    if (S.form === 'heart') { tip.textContent = '❤ 郝文君宝宝 · 生日快乐 ❤'; return; }
+    if (S.form === 'heartText') { tip.textContent = '❤ 许的愿，星星都听见了 ❤'; return; }
+    if (S.lit === 3) tip.textContent = '拖拽旋转 · 对着屏幕吹气 / 点击蜡烛 吹灭它';
+    else if (S.lit > 0) tip.textContent = `还剩 ${S.lit} 根蜡烛，加油吹～`;
+    else tip.textContent = '✨ 愿望已经送到星星那边了 ✨';
+  }
+
+  /* =====================================================================
+     粒子初始化 & 每帧更新
+     ===================================================================== */
+  function initParticles() {
+    const small = Math.min(innerWidth, innerHeight) < 560;
+    const q = small ? 0.5 : 1;
+    // 蛋糕形态粒子总量
+    const cake = buildCake(Math.round(26000 * q), Math.round(6000 * q));
+    const plate = buildPlate(Math.round(2200 * q));
+    const candles = buildCandles(Math.round(5200 * q));
+    const flames = buildFlames(Math.round(1900 * q));
+    FORMS.cake = cake.concat(plate, candles, flames);
+    const total = FORMS.cake.length;
+
+    // 文字形态
+    // 文字目标宽度：按 16:9 视野估算（竖屏会更宽以填满）
+    const textW = H > W ? 1.55 : 3.35;
+    FORMS.text = insetText(
+      buildTextTargets([
+        { text: '郝文君', col: C.magenta, weight: 900 },
+        { text: '生 日 快 乐', col: C.cyan, weight: 800 },
+        { text: 'HAPPY  BIRTHDAY', col: C.violet, weight: 700 }
+      ], Math.floor(total * 0.95), textW),
+      0.88
+    );
+    FORMS.heart = buildHeartTargets(Math.floor(total * 0.92));
+    FORMS.heartWish = buildTextTargets([
+      { text: '郝文君宝宝', col: C.magenta, weight: 900 },
+      { text: '生日快乐 🎂', col: C.amber, weight: 800 }
+    ], Math.floor(total * 0.45), textW * 0.92);
+    FORMS.tumble = buildTumble(total);
+    FORMS.orbit = buildOrbit(Math.floor(total * 0.55));
+    FORMS.rain = buildRain(Math.floor(total * 0.6));
+
+    parts = [];
+    for (let i = 0; i < total; i++) {
+      const p = newPart();
+      const t = FORMS.cake[i];
+      // 从远处汇聚入场
+      const a = random() * Math.PI * 2;
+      const rr = rnd(4, 9);
+      p.px = Math.cos(a) * rr; p.py = rnd(-4, 5); p.pz = Math.sin(a) * rr;
+      p.tx = t.x; p.ty = t.y; p.tz = t.z;
+      p.baseColor = t.col; p.color = t.col;
+      p.baseSize = t.size; p.size = t.size;
+      p.type = t.type; p.candle = t.candle == null ? -1 : t.candle;
+      p.flameRank = t.flameRank || 0;
+      p.radius = Math.hypot(t.x, t.z);
+      p.ang = Math.atan2(t.z, t.x);
+      p.delay = random() * 1.6;
+      p.sp = rnd(0.8, 1.4);
+      parts.push(p);
+    }
+    S.morph = 1;
+  }
+
+  function updateParticles(dt, T) {
+    const flameSpread = 1 + Math.sin(T * 0.6) * 0.18;
+    const kBase = 1 - Math.exp(-dt * 3.4);
+
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      if (p.wait !== p.wait) p.wait = 0;
+      if (p.ex !== p.ex) { p.ex = 0; p.ey = 0; p.ez = 0; }
+      if (Number.isNaN(p.y)) p.y = null;
+      if (p.y == null) { p.x = null; p.z = null; }
+      if (p.hold !== p.hold) p.hold = 0;
+      const k = Math.min(1, kBase * p.sp);
+
+      // —— 目标位置（含形态动画）——
+      let tx = p.tx, ty = p.ty, tz = p.tz;
+      const ox = p.x, oy = p.y, oz = p.z;
+
+      if (p.type <= 1 || S.form === 'cake') {
+        // 蛋糕 / 蜡烛随整体缓慢旋转
+        const ang = p.ang + S.spin;
+        tx = Math.cos(ang) * p.radius;
+        tz = Math.sin(ang) * p.radius;
+        if (S.form === 'cake') ty += Math.sin(T * 1.1 + p.phase) * 0.0035;
+      }
+      if (S.form === 'text') {
+        ty += Math.sin(T * 1.7 + p.phase + p.line * 1.3) * 0.010;
+        tx += Math.cos(T * 0.8 + p.phase) * 0.006;
+      } else if (S.form === 'heart') {
+        const beat = 1 + Math.sin(T * 2.6) * 0.04;
+        tx *= beat; ty = (ty - 0.1) * beat + 0.1;
+        tz += Math.sin(T * 1.2 + p.phase) * 0.02;
+      } else if (S.form === 'tumble') {
+        tx += Math.sin(T * 0.5 + p.phase) * 0.12;
+        ty += Math.cos(T * 0.43 + p.phase * 1.3) * 0.12;
+        tz += Math.sin(T * 0.37 + p.phase * 0.7) * 0.12;
+      } else if (S.form === 'orbit') {
+        const a2 = T * 0.5 + p.ang;
+        tx = Math.cos(a2) * p.radius;
+        tz = Math.sin(a2) * p.radius;
+      } else if (S.form === 'rain') {
+        ty -= ((T * 0.35 + p.seed) % 3.2);
+        tx += Math.sin(T * 0.9 + p.phase) * 0.05;
+      }
+
+      // 火焰：向上+晃动
+      if (p.type === 2) {
+        const h = p.flameRank;
+        tx += Math.sin(T * 13 + p.seed) * 0.013 * h + Math.sin(T * 7.3 + p.seed * 2) * 0.007;
+        tz += Math.cos(T * 11 + p.seed * 1.7) * 0.013 * h;
+        ty += h * 0.17 * flameSpread * (1 + Math.sin(T * 17 + p.seed) * 0.07);
+      }
+
+      if (p.wait > 0) {
+        // 等待阶段：先留在原位，到点再收拢
+        if (!(p.wait > 0)) p.wait = 0;
+        p.wait -= dt;
+        tx = ox; ty = oy; tz = oz;
+        p.ex *= 0.90; p.ey *= 0.90; p.ez *= 0.90;
+      }
+
+      // —— 爆炸冲量（吹灭 / 炸散）——
+      if (p.hold > 0) {
+        p.hold -= dt;
+        p.ex += p.evx * dt; p.ey += p.evy * dt; p.ez += p.evz * dt;
+        const damp = Math.exp(-2.2 * dt);
+        p.evx *= damp; p.evz *= damp; p.evy = p.evy * damp + 0.6 * dt;
+        if (p.wait > 0) { p.ex *= 0.92; p.ey *= 0.92; p.ez *= 0.92; }
+      }
+      tx += p.ex; ty += p.ey; tz += p.ez;
+
+      // —— 追随（弹性缓动）——
+      if (!Number.isFinite(p.x) || p.x == null) { p.x = tx; p.y = ty; p.z = tz; }
+      else if (p.wait <= 0) {
+        // 收拢阶段：平滑吸附到目标
+        const kk = 1 - Math.exp(-dt * 3.1 * p.sp);
+        p.x += (tx - p.x) * kk; p.y += (ty - p.y) * kk; p.z += (tz - p.z) * kk;
+      }
+      else if (p.wait > 0) {
+        p.x += (tx - p.x) * k;
+        p.y += (ty - p.y) * k;
+        p.z += (tz - p.z) * k;
+      }
+
+      // —— 颜色 / 尺寸 / 透明度 ——
+      let col = p.baseColor, size = p.baseSize, alpha = 1;
+      if (p.type === 2) {
+        const h = p.flameRank;
+        const c = h < 0.4 ? mix3(C.flameIn, C.flameMid, h / 0.4) : mix3(C.flameMid, C.flameOut, (h - 0.4) / 0.6);
+        const flick = (0.78 + 0.22 * Math.sin(T * 19 + p.seed * 3)) * flameSpread;
+        col = [c[0] * flick, c[1] * flick, c[2] * flick];
+        size = 0.041 * (1 - h * 0.38);
+        const out = S.candlesOut[p.candle];
+        alpha = out ? Math.max(0, Math.min(1, p.hold)) * (1 - h * h) : (1 - h * h * 0.75);
+      } else if (p.hold > 0) {
+        // 余温：偏暖色
+        const g = Math.max(0, Math.min(1, p.hold / 1.2)) * 0.7;
+        col = mix3(p.baseColor, toLin([255, 150, 70]), g);
+      }
+      p.size += (size - p.size) * Math.min(1, dt * 6);
+      p.color = col;
+      p.alpha = alpha;
+    }
+
+    S.morph = Math.max(0, S.morph - dt);
+
+    // 烟
+    if (S.smoke) {
+      for (let i = S.smoke.length - 1; i >= 0; i--) {
+        const sm = S.smoke[i];
+        sm.life += dt;
+        if (sm.life > sm.max) { S.smoke.splice(i, 1); continue; }
+        sm.x += sm.vx * dt; sm.y += sm.vy * dt; sm.z += sm.vz * dt;
+        sm.vy *= Math.exp(-0.7 * dt);
+        sm.vx += Math.sin(T * 2.2 + i * 0.7) * 0.06 * dt;
+        sm.vz += Math.cos(T * 1.7 + i * 0.5) * 0.06 * dt;
+      }
+    }
+    // 点击火花
+    if (S.sparkles) {
+      for (let i = S.sparkles.length - 1; i >= 0; i--) {
+        const sp = S.sparkles[i];
+        sp.life += dt;
+        if (sp.life > sp.max) { S.sparkles.splice(i, 1); continue; }
+        sp.x += sp.vx * dt; sp.y += sp.vy * dt; sp.z += sp.vz * dt;
+        sp.vy -= 0.8 * dt;
+        sp.vx *= Math.exp(-1.5 * dt); sp.vz *= Math.exp(-1.5 * dt);
+      }
+    }
+  }
+
+  // 炸散：整个蛋糕粒子向外爆开再回收
+  function scatter(power) {
+    for (const p of parts) {
+      if (p.x == null) continue;
+      const len = Math.hypot(p.x, p.y - 0.2, p.z) || 1;
+      const sp = rnd(0.8, 2.2) * (power || 1);
+      p.ex += 0; p.ey += 0; p.ez += 0;
+      p.evx = (p.x / len) * sp; p.evy = ((p.y - 0.2) / len) * sp + rnd(0.2, 0.9); p.evz = (p.z / len) * sp;
+      p.hold = rnd(0.8, 1.5);
+    }
+  }
+
+  /* ---------------- 写入 GPU ---------------- */
+  let drawCount = 0;
+  function uploadParticles() {
+    let n = 0;
+    const flash = S.flash;
+    for (let i = 0; i < parts.length && n < MAXP; i++) {
+      const p = parts[i];
+      if (p.alpha <= 0.002 || p.x == null) continue;
+      const o = n * 8;
+      gpu[o] = p.x; gpu[o + 1] = p.y; gpu[o + 2] = p.z;
+      gpu[o + 3] = p.color[0] + flash * 0.6;
+      gpu[o + 4] = p.color[1] + flash * 0.6;
+      gpu[o + 5] = p.color[2] + flash * 0.6;
+      gpu[o + 6] = p.size;
+      gpu[o + 7] = p.alpha;
+      n++;
+    }
+    // 烟（白色半透明）
+    if (S.smoke) {
+      for (const s of S.smoke) {
+        if (n >= MAXP) break;
+        const t = s.life / s.max;
+        const o = n * 8;
+        gpu[o] = s.x; gpu[o + 1] = s.y; gpu[o + 2] = s.z;
+        gpu[o + 3] = 0.10; gpu[o + 4] = 0.11; gpu[o + 5] = 0.13;
+        gpu[o + 6] = 0.05 + t * 0.09;
+        gpu[o + 7] = (1 - t) * 0.5;
+        n++;
+      }
+    }
+    drawCount = n;
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, gpu.subarray(0, n * 8));
+  }
+
+  /* =====================================================================
+     音效（WebAudio 合成）
+     ===================================================================== */
+  const Sound = (function () {
+    let ctx = null, master = null, muted = false, nb = null;
+    function ensure() {
+      if (!ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        ctx = new AC();
+        master = ctx.createGain(); master.gain.value = 0.5;
+        const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 5;
+        master.connect(comp); comp.connect(ctx.destination);
+        nb = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+        const d = nb.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = random() * 2 - 1;
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+      return ctx;
+    }
+    function blow(dur) {
+      if (muted || !ensure()) return;
+      const d = dur || 0.5, t = ctx.currentTime;
+      const src = ctx.createBufferSource(); src.buffer = nb; src.loop = true;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(500, t); lp.frequency.linearRampToValueAtTime(1600, t + d * 0.3); lp.frequency.linearRampToValueAtTime(400, t + d);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.3, t + 0.06); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      src.connect(lp); lp.connect(g); g.connect(master); src.start(t); src.stop(t + d + 0.05);
+    }
+    function pluck(f, when, vol, type, dur) {
+      if (muted || !ensure()) return;
+      const t = ctx.currentTime + (when || 0);
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type || 'sine'; o.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.05, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.5));
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + (dur || 0.5) + 0.05);
+    }
+    function spark() {
+      if (muted || !ensure()) return;
+      const sc = [523, 659, 784, 1047, 1319];
+      for (let i = 0; i < 10; i++) pluck(sc[(random() * sc.length) | 0], i * 0.045, 0.03, 'sine', 0.6);
+    }
+    function boom() {
+      if (muted || !ensure()) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(32, t + 0.7);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + 1.2);
+      const n = ctx.createBufferSource(); n.buffer = nb; n.loop = true;
+      const bp = ctx.createBiquadFilter(); bp.type = 'lowpass'; bp.frequency.setValueAtTime(2600, t); bp.frequency.exponentialRampToValueAtTime(300, t + 0.8);
+      const ng = ctx.createGain(); ng.gain.setValueAtTime(0.35, t); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+      n.connect(bp); bp.connect(ng); ng.connect(master); n.start(t); n.stop(t + 1);
+      for (let i = 0; i < 20; i++) {
+        const tt = t + 0.1 + random() * 1.1;
+        const c = ctx.createOscillator(), cg = ctx.createGain();
+        c.type = 'square'; c.frequency.value = 1800 + random() * 3500;
+        cg.gain.setValueAtTime(0, tt); cg.gain.linearRampToValueAtTime(0.04, tt + 0.004); cg.gain.exponentialRampToValueAtTime(0.0001, tt + 0.06);
+        c.connect(cg); cg.connect(master); c.start(tt); c.stop(tt + 0.07);
+      }
+    }
+    function song() {
+      if (muted || !ensure()) return;
+      const s = { G4: 392, A4: 440, B4: 493.88, C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99 };
+      const mel = [['G4', 0, .3], ['G4', .32, .18], ['A4', .5, .5], ['G4', 1.0, .5], ['C5', 1.5, .5], ['B4', 2.0, .9],
+        ['G4', 2.9, .3], ['G4', 3.22, .18], ['A4', 3.4, .5], ['G4', 3.9, .5], ['D5', 4.4, .5], ['C5', 4.9, .9],
+        ['G4', 5.8, .3], ['G4', 6.12, .18], ['G5', 6.3, .5], ['E5', 6.8, .5], ['C5', 7.3, .5], ['B4', 7.8, .5], ['A4', 8.3, .85],
+        ['F5', 9.2, .3], ['F5', 9.52, .18], ['E5', 9.7, .5], ['C5', 10.2, .5], ['D5', 10.7, .5], ['C5', 11.2, 1.2]];
+      mel.forEach(([nn, t, d]) => { pluck(s[nn], t, 0.06, 'triangle', d * 1.5); pluck(s[nn] * 2, t, 0.012, 'sine', d); });
+    }
+    return { blow, pluck, spark, boom, song, setMuted(v) { muted = v; }, get muted() { return muted; }, unlock() { ensure(); } };
+  })();
+
+  /* =====================================================================
+     镜头 / 输入
+     ===================================================================== */
+  // 可播种随机（全局，保证每次构图一致，也便于调试）
+  let _seed = 20261121;
+  function random() {
+    _seed = (_seed * 1664525 + 1013904223) % 4294967296;
+    return _seed / 4294967296;
+  }
+  Math.random = random;
+
+  const cam = { yaw: 0, pitch: 0.20, yawT: 0, pitchT: 0.20, dist: 4.0, distT: 4.0, target: [0, 0.02, 0] };
+
+  // 拖拽旋转
+  let dragging = false, lastX = 0, lastY = 0, moved = 0, downX = 0, downY = 0;
+  canvas.addEventListener('pointerdown', (e) => {
+    Sound.unlock();
+    dragging = true; moved = 0;
+    lastX = downX = e.clientX; lastY = downY = e.clientY;
+    canvas.classList.add('grabbing');
+    canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    moved += Math.abs(dx) + Math.abs(dy);
+    cam.yawT += dx * 0.006;
+    cam.pitchT = Math.max(-0.65, Math.min(0.85, cam.pitchT + dy * 0.004));
+  });
+  function endDrag(e) {
+    if (!dragging) return;
+    dragging = false;
+    canvas.classList.remove('grabbing');
+    if (moved < 6) onTap(e.clientX, e.clientY);
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', () => { dragging = false; canvas.classList.remove('grabbing'); });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    cam.distT = Math.max(2.4, Math.min(9, cam.distT + e.deltaY * 0.0022));
+  }, { passive: false });
+
+  // 点击拾取蜡烛（把蜡烛世界坐标投影到屏幕）
+  function project(p, vp) {
+    const x = vp[0] * p[0] + vp[4] * p[1] + vp[8] * p[2] + vp[12];
+    const y = vp[1] * p[0] + vp[5] * p[1] + vp[9] * p[2] + vp[13];
+    const w = vp[3] * p[0] + vp[7] * p[1] + vp[11] * p[2] + vp[15];
+    if (w <= 0) return null;
+    return { x: (x / w * 0.5 + 0.5) * W, y: (1 - (y / w * 0.5 + 0.5)) * H };
+  }
+  let lastVP = null;
+  function candleScreen(i) {
+    if (!lastVP) return null;
+    const c = CANDLES[i];
+    const rot = S.spin;
+    const cx = c.x * Math.cos(rot) - c.z * Math.sin(rot);
+    const cz = c.x * Math.sin(rot) + c.z * Math.cos(rot);
+    const top = project([cx, CANDLE_BASE + c.h * 0.7, cz], lastVP);
+    const bot = project([cx, CANDLE_BASE, cz], lastVP);
+    if (!top || !bot) return null;
+    return { x: top.x, y: (top.y + bot.y) / 2, h: Math.abs(bot.y - top.y) };
+  }
+  function onTap(sx, sy) {
+    if (S.form !== 'cake') { setFormTargets('cake'); return; }
+    let best = -1, bestD = 1e9;
+    for (let i = 0; i < 3; i++) {
+      const s = candleScreen(i);
+      if (!s) continue;
+      const d = Math.hypot(s.x - sx, s.y - sy);
+      const rad = Math.max(30, s.h * 0.9);
+      if (d < rad && d < bestD) { bestD = d; best = i; }
+    }
+    if (best >= 0) blowCandle(best);
+    else {
+      // 点空白：小火花
+      Sound.pluck(900 + random() * 900, 0, 0.03, 'sine', 0.35);
+      S.sparkles = S.sparkles || [];
+      for (let k = 0; k < 22; k++) {
+        const a = random() * Math.PI * 2;
+        S.sparkles.push({ x: 0, y: 0.2, z: 0, vx: Math.cos(a) * rnd(0.4, 1.1), vy: rnd(0.3, 1.2), vz: Math.sin(a) * rnd(0.4, 1.1), life: 0, max: rnd(0.6, 1.2) });
+      }
+    }
+  }
+  canvas.addEventListener('pointermove', (e) => {
+    if (dragging || S.form !== 'cake') { canvas.classList.remove('pointing'); return; }
+    let hit = false;
+    for (let i = 0; i < 3; i++) {
+      const s = candleScreen(i);
+      if (s && Math.hypot(s.x - e.clientX, s.y - e.clientY) < Math.max(30, s.h * 0.9)) hit = true;
+    }
+    canvas.classList.toggle('pointing', hit);
+  });
+
+  /* ---------------- 麦克风吹气 ---------------- */
+  const mic = { a: null, data: null, running: false, denied: false, hold: 0 };
+  async function enableMic() {
+    if (mic.running || mic.denied) return;
+    try {
+      const st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ac = new AC();
+      const an = ac.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.6;
+      ac.createMediaStreamSource(st).connect(an);
+      mic.a = an; mic.data = new Float32Array(an.fftSize); mic.running = true; mic.ac = ac;
+    } catch (e) { mic.denied = true; }
+  }
+  let lastMic = 0;
+  function micLoop(now) {
+    if (!mic.running || S.form !== 'cake' || S.lit === 0) return;
+    if (now - lastMic < 60) return;
+    lastMic = now;
+    mic.a.getFloatTimeDomainData(mic.data);
+    let sum = 0, peak = 0;
+    for (let i = 0; i < mic.data.length; i++) { const v = mic.data[i]; sum += v * v; if (Math.abs(v) > peak) peak = Math.abs(v); }
+    const lvl = Math.min(1, Math.sqrt(sum / mic.data.length) * 6 + peak * 0.5);
+    if (lvl > 0.16) {
+      mic.hold += 0.06;
+      if (random() < Math.min(0.9, (lvl - 0.16) * 2 + 0.3) * 0.55) {
+        const idx = [0, 1, 2].filter((i) => !S.candlesOut[i]);
+        if (idx.length) blowCandle(idx[(random() * idx.length) | 0]);
+      }
+    } else mic.hold = Math.max(0, mic.hold - 0.05);
+  }
+  let micAsked = false;
+  window.addEventListener('pointerdown', () => {
+    Sound.unlock();
+    if (micAsked) return; micAsked = true;
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) enableMic();
+  }, { once: true });
+
+  /* ---------------- 按钮 ---------------- */
+  $('#btnBlow').addEventListener('click', () => { Sound.unlock(); blowAll(); });
+  $('#btnForm').addEventListener('click', () => { Sound.unlock(); resetCandles(); setFormTargets('cake'); cam.distT = 4.9; });
+  $('#btnText').addEventListener('click', () => { Sound.unlock(); setFormTargets('text', 0.05); cam.distT = 5.2; flashPulse(0.35); Sound.spark(); });
+  $('#btnGift').addEventListener('click', () => { Sound.unlock(); giftForm(); });
+  $('#btnSound').addEventListener('click', () => {
+    Sound.unlock(); Sound.setMuted(!Sound.muted);
+    $('#btnSound').textContent = Sound.muted ? '🔇' : '🔊';
+  });
+  $('#btnFull').addEventListener('click', () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => {});
+    else document.exitFullscreen && document.exitFullscreen();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === ' ') { e.preventDefault(); blowAll(); }
+    if (e.key >= '1' && e.key <= '3') blowCandle(+e.key - 1);
+    if (e.key.toLowerCase() === 't') setFormTargets('text');
+    if (e.key.toLowerCase() === 'c') { resetCandles(); setFormTargets('cake'); }
+  });
+
+  /* =====================================================================
+     渲染
+     ===================================================================== */
+  function resize() {
+    W = Math.max(320, innerWidth); H = Math.max(240, innerHeight);
+    canvas.width = Math.round(W * RATIO); canvas.height = Math.round(H * RATIO);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 250));
+
+  let last = performance.now(), T = 0, frames = 0, fpsT = 0, fps = 60;
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now; T += dt;
+    frames++; fpsT += dt;
+    if (fpsT > 1) { fps = frames / fpsT; frames = 0; fpsT = 0; }
+
+    // 镜头
+    cam.yaw += (cam.yawT - cam.yaw) * Math.min(1, dt * 6);
+    cam.pitch += (cam.pitchT - cam.pitch) * Math.min(1, dt * 6);
+    cam.dist += (cam.distT - cam.dist) * Math.min(1, dt * 2.2);
+    S.spin += dt * S.spinVel * (dragging ? 0 : 1);
+
+    updateParticles(dt, T);
+    // 火焰热度（用于整体亮度）
+    S.flash = Math.max(0, S.flash - dt * 1.8);
+
+    // 相机
+    const cy = Math.cos(cam.pitch), sy = Math.sin(cam.pitch);
+    const eye = [Math.sin(cam.yaw) * cam.dist * cy, cam.target[1] + sy * cam.dist + 0.35, Math.cos(cam.yaw) * cam.dist * cy];
+    // 竖屏自动拉远
+    const aspect = W / H;
+    const distScale = aspect < 0.85 ? 1.42 : 1.0;
+    const eye2 = [eye[0] * distScale, eye[1] * distScale, eye[2] * distScale];
+    const proj = perspective(45 * Math.PI / 180, aspect, 0.1, 100);
+    const view = lookAt(eye2, cam.target, [0, 1, 0]);
+    const vp = mul4(proj, view);
+    lastVP = vp;
+
+    uploadParticles();
+
+    gl.clearColor(0.008, 0.012, 0.03, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(prog);
+    gl.uniformMatrix4fv(U.vp, false, vp);
+    gl.uniform2f(U.res, canvas.width, canvas.height);
+    gl.bindVertexArray(vao);
+    gl.drawArrays(gl.POINTS, 0, drawCount);
+    gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
+
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------------- 启动 ---------------- */
+  resize();
+  initParticles();
+  updateTip();
+  requestAnimationFrame((t) => { last = t; frame(t); });
+
+  setTimeout(() => {
+    $('#brand').classList.add('show');
+    $('#hud').classList.add('show');
+    $('#tools').classList.add('show');
+  }, 900);
+
+  // 入场：粒子从远处缓缓汇聚
+  for (const p of parts) {
+    const a = p.ang + (random() - 0.5) * 2.4;
+    const r = 5 + random() * 5;
+    p.x = Math.cos(a) * r;
+    p.y = (p.ty || 0) + (random() - 0.3) * 6;
+    p.z = Math.sin(a) * r;
+  }
+
+  // 调试接口
+  window.__pc = {
+    S, CANDLES,
+    blow: (i) => blowCandle(i),
+    blowAll, setForm: setFormTargets, reset: resetCandles, gift: giftForm,
+    dbgNaN(n) { const out = []; parts.forEach((p, i) => { if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) out.push({ i, x: p.x, y: p.y, z: p.z, tx: p.tx, ty: p.ty, wait: p.wait, hold: p.hold, ex: p.ex, sp: p.sp, type: p.type }); }); return { count: out.length, first: out.slice(0, 3) }; },
+    state() {
+      const ys = parts.map((p) => p.y).filter((v) => v != null);
+      const xs = parts.map((p) => p.x).filter((v) => v != null);
+      return {
+        form: S.form, lit: S.lit, n: parts.length, draw: drawCount, fps: +fps.toFixed(1),
+        xr: [Math.min(...xs).toFixed(2), Math.max(...xs).toFixed(2)],
+        yr: [Math.min(...ys).toFixed(2), Math.max(...ys).toFixed(2)],
+        err: gl.getError(), spin: +S.spin.toFixed(2)
+      };
+    }
+  };
+})();
+</script>
+</body>
+</html>
